@@ -10,14 +10,14 @@
     import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, limit, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const firebaseConfig = {
-  apiKey: "AIzaSyDpoYcFHa-0ThuMkMCYmY1OU8fzq3MevfQ",
-  authDomain: "poker-dealer-login.firebaseapp.com",
-  projectId: "poker-dealer-login",
-  storageBucket: "poker-dealer-login.appspot.com",
-  messagingSenderId: "632442081246",
-  appId: "1:632442081246:web:26b3e4432c43c207a1974f",
-  measurementId: "G-BJEE29PZF4"
-};
+      apiKey: "AIzaSyDpoYcFHa-0ThuMkMCYmY1OU8fzq3MevfQ",
+      authDomain: "poker-dealer-login.firebaseapp.com",
+      projectId: "poker-dealer-login",
+      storageBucket: "poker-dealer-login.appspot.com",
+      messagingSenderId: "632442081246",
+      appId: "1:632442081246:web:26b3e4432c43c207a1974f",
+      measurementId: "G-BJEE29PZF4"
+    };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
@@ -27,8 +27,8 @@
     const summaryBody = document.getElementById("summaryBody");
     const fullLogBody = document.getElementById("logBody");
 
+    let today = new Date().toISOString().split("T")[0];
     document.addEventListener("DOMContentLoaded", () => {
-      const today = new Date().toISOString().split("T")[0];
       document.getElementById("gameDate").value = today;
     });
 
@@ -56,23 +56,39 @@
     }
 
     window.redeem = async function(dealerName) {
-      const q = query(
-        collection(db, "checkins"),
-        where("dealerName", "==", dealerName),
-        orderBy("timestamp"),
-        limit(5)
-      );
-      const snapshot = await getDocs(q);
-      for (const docSnap of snapshot.docs) {
-        await deleteDoc(doc(db, "checkins", docSnap.id));
+      try {
+        const q = query(
+          collection(db, "checkins"),
+          where("dealerName", "==", dealerName),
+          orderBy("timestamp"),
+          limit(5)
+        );
+
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+          alert("No eligible check-ins to redeem for this dealer.");
+          return;
+        }
+
+        let deleted = 0;
+        for (const docSnap of snapshot.docs) {
+          await deleteDoc(doc(db, "checkins", docSnap.id));
+          deleted++;
+        }
+
+        alert(`Successfully redeemed 1 rebuy for ${dealerName}. (${deleted} check-ins removed)`);
+        updateSummary();
+      } catch (err) {
+        console.error("Redeem error:", err);
+        alert("Something went wrong while trying to redeem. See console for details.");
       }
-      updateSummary();
-    }
+    };
 
     form.addEventListener("submit", async function(e) {
       e.preventDefault();
       const dealerName = document.getElementById("dealerName").value;
-      const gameDate = document.getElementById("gameDate").value;
+      const gameDate = today;
       const location = document.getElementById("location").value || document.getElementById("customLocation").value;
 
       if (!dealerName || !gameDate) {
@@ -102,7 +118,6 @@
 
       statusDiv.textContent = `Check-in submitted for ${dealerName} on ${gameDate}.`;
       form.reset();
-      const today = new Date().toISOString().split("T")[0];
       document.getElementById("gameDate").value = today;
       updateSummary();
     });
@@ -180,7 +195,7 @@
     </select>
 
     <label for="gameDate">Date:</label>
-    <input type="date" id="gameDate" required />
+    <input type="date" id="gameDate" required readonly />
 
     <label for="location">Location (select or type):</label>
     <select id="location">
