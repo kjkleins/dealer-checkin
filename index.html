@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +6,8 @@
   <title>Poker Dealer Check-In</title>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, limit, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDpoYcFHa-0ThuMkMCYmY1OU8fzq3MevfQ",
@@ -21,20 +21,57 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    let currentUser = null;
 
     const form = document.getElementById("checkinForm");
     const statusDiv = document.getElementById("status");
     const summaryBody = document.getElementById("summaryBody");
     const fullLogBody = document.getElementById("logBody");
+    const authControls = document.getElementById("authControls");
+    const loginForm = document.getElementById("loginForm");
+    const redeemBtns = () => document.querySelectorAll(".redeem-btn");
 
     let today = new Date().toISOString().split("T")[0];
     document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("gameDate").value = today;
     });
 
+    function toggleAuthUI(user) {
+      currentUser = user;
+      authControls.style.display = user ? "block" : "none";
+      if (!user) {
+        redeemBtns().forEach(btn => btn.style.display = "none");
+      }
+      updateSummary();
+    }
+
+    loginForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      const email = document.getElementById("adminEmail").value;
+      const password = document.getElementById("adminPassword").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        loginForm.reset();
+      } catch (err) {
+        alert("Login failed: " + err.message);
+      }
+    });
+
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      signOut(auth);
+    });
+
+    onAuthStateChanged(auth, user => {
+      toggleAuthUI(user);
+    });
+
     async function updateSummary() {
       const snapshot = await getDocs(collection(db, "checkins"));
+      const redemptions = await getDocs(collection(db, "rebuyRedemptions"));
       const countMap = {};
+      const redeemedMap = {};
       summaryBody.innerHTML = "";
       fullLogBody.innerHTML = "";
 
@@ -47,42 +84,33 @@
         fullLogBody.innerHTML += logRow;
       });
 
+      redemptions.forEach(docSnap => {
+        const r = docSnap.data();
+        redeemedMap[r.dealerName] = (redeemedMap[r.dealerName] || 0) + 1;
+      });
+
       Object.entries(countMap).forEach(([dealer, checkins]) => {
-        const rebuyCount = Math.floor(checkins.length / 5);
-        const badge = rebuyCount > 0 ? `<span class='badge'>${rebuyCount} Rebuy${rebuyCount > 1 ? 's' : ''}</span>` : "";
-        const row = `<tr><td>${dealer} ${badge}</td><td>${rebuyCount}</td><td><button onclick='redeem("${dealer}")'>Redeem One</button></td></tr>`;
+        const earned = Math.floor(checkins.length / 5);
+        const used = redeemedMap[dealer] || 0;
+        const available = Math.max(earned - used, 0);
+        const badge = available > 0 ? `<span class='badge'>${available} Rebuy${available > 1 ? 's' : ''}</span>` : "";
+        const button = currentUser ? `<button class='redeem-btn' onclick='redeem("${dealer}")'>Redeem One</button>` : "";
+        const row = `<tr><td>${dealer} ${badge}</td><td>${available}</td><td>${button}</td></tr>`;
         summaryBody.innerHTML += row;
       });
     }
 
     window.redeem = async function(dealerName) {
-      try {
-        const q = query(
-          collection(db, "checkins"),
-          where("dealerName", "==", dealerName),
-          orderBy("timestamp"),
-          limit(5)
-        );
-
-        const snapshot = await getDocs(q);
-
-        if (snapshot.empty) {
-          alert("No eligible check-ins to redeem for this dealer.");
-          return;
-        }
-
-        let deleted = 0;
-        for (const docSnap of snapshot.docs) {
-          await deleteDoc(doc(db, "checkins", docSnap.id));
-          deleted++;
-        }
-
-        alert(`Successfully redeemed 1 rebuy for ${dealerName}. (${deleted} check-ins removed)`);
-        updateSummary();
-      } catch (err) {
-        console.error("Redeem error:", err);
-        alert("Something went wrong while trying to redeem. See console for details.");
+      if (!currentUser) {
+        alert("Only logged-in admins can redeem.");
+        return;
       }
+      await addDoc(collection(db, "rebuyRedemptions"), {
+        dealerName,
+        adminEmail: currentUser.email,
+        timestamp: new Date()
+      });
+      updateSummary();
     };
 
     form.addEventListener("submit", async function(e) {
@@ -121,8 +149,6 @@
       document.getElementById("gameDate").value = today;
       updateSummary();
     });
-
-    updateSummary();
   </script>
   <style>
     body {
@@ -165,10 +191,28 @@
       font-size: 0.8rem;
       margin-left: 5px;
     }
+    #authControls {
+      display: none;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
   </style>
 </head>
 <body>
   <h1>Poker Dealer Check-In</h1>
+
+  <form id="loginForm">
+    <label for="adminEmail">Admin Email:</label>
+    <input type="email" id="adminEmail" required placeholder="shawn@tjspecialty.com" />
+    <label for="adminPassword">Password:</label>
+    <input type="password" id="adminPassword" required placeholder="••••••" />
+    <button type="submit">Login</button>
+  </form>
+  <div id="authControls">
+    <p>Logged in as admin</p>
+    <button id="logoutBtn">Logout</button>
+  </div>
+
   <form id="checkinForm">
     <label for="dealerName">Dealer Name:</label>
     <select id="dealerName" required>
@@ -208,6 +252,7 @@
 
     <button type="submit">Submit Check-In</button>
   </form>
+
   <div id="status"></div>
 
   <h2>Dealer Rebuy Status</h2>
