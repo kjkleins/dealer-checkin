@@ -1,0 +1,221 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Poker Dealer Check-In</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs, query, where, orderBy, limit, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const form = document.getElementById("checkinForm");
+    const statusDiv = document.getElementById("status");
+    const summaryBody = document.getElementById("summaryBody");
+    const fullLogBody = document.getElementById("logBody");
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("gameDate").value = today;
+    });
+
+    async function updateSummary() {
+      const snapshot = await getDocs(collection(db, "checkins"));
+      const countMap = {};
+      summaryBody.innerHTML = "";
+      fullLogBody.innerHTML = "";
+
+      snapshot.forEach(docSnap => {
+        const d = docSnap.data();
+        if (!countMap[d.dealerName]) countMap[d.dealerName] = [];
+        countMap[d.dealerName].push({ id: docSnap.id, ...d });
+
+        const logRow = `<tr><td>${d.dealerName}</td><td>${d.gameDate}</td><td>${d.location}</td></tr>`;
+        fullLogBody.innerHTML += logRow;
+      });
+
+      Object.entries(countMap).forEach(([dealer, checkins]) => {
+        const rebuyCount = Math.floor(checkins.length / 5);
+        const badge = rebuyCount > 0 ? `<span class='badge'>${rebuyCount} Rebuy${rebuyCount > 1 ? 's' : ''}</span>` : "";
+        const row = `<tr><td>${dealer} ${badge}</td><td>${rebuyCount}</td><td><button onclick='redeem("${dealer}")'>Redeem One</button></td></tr>`;
+        summaryBody.innerHTML += row;
+      });
+    }
+
+    window.redeem = async function(dealerName) {
+      const q = query(
+        collection(db, "checkins"),
+        where("dealerName", "==", dealerName),
+        orderBy("timestamp"),
+        limit(5)
+      );
+      const snapshot = await getDocs(q);
+      for (const docSnap of snapshot.docs) {
+        await deleteDoc(doc(db, "checkins", docSnap.id));
+      }
+      updateSummary();
+    }
+
+    form.addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const dealerName = document.getElementById("dealerName").value;
+      const gameDate = document.getElementById("gameDate").value;
+      const location = document.getElementById("location").value || document.getElementById("customLocation").value;
+
+      if (!dealerName || !gameDate) {
+        statusDiv.textContent = "Please fill in all required fields.";
+        return;
+      }
+
+      const q = query(collection(db, "checkins"), where("dealerName", "==", dealerName));
+      const existingSnapshot = await getDocs(q);
+
+      const sameSession = existingSnapshot.docs.find(docSnap => {
+        const data = docSnap.data();
+        return data.gameDate === gameDate && data.location === location;
+      });
+
+      if (sameSession) {
+        statusDiv.textContent = "You've already checked in for this session.";
+        return;
+      }
+
+      await addDoc(collection(db, "checkins"), {
+        dealerName,
+        gameDate,
+        location,
+        timestamp: new Date().toISOString()
+      });
+
+      statusDiv.textContent = `Check-in submitted for ${dealerName} on ${gameDate}.`;
+      form.reset();
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("gameDate").value = today;
+      updateSummary();
+    });
+
+    updateSummary();
+  </script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    label {
+      display: block;
+      margin-top: 1rem;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    #status {
+      margin-top: 1rem;
+      font-weight: bold;
+    }
+    table {
+      margin-top: 2rem;
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    .badge {
+      background-color: gold;
+      color: black;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      margin-left: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Poker Dealer Check-In</h1>
+  <form id="checkinForm">
+    <label for="dealerName">Dealer Name:</label>
+    <select id="dealerName" required>
+      <option value="">-- Select Dealer --</option>
+      <option value="Austin Hanson">Austin Hanson</option>
+      <option value="Bobbi Thiesse">Bobbi Thiesse</option>
+      <option value="Cheryl Olson">Cheryl Olson</option>
+      <option value="Christy Tobin">Christy Tobin</option>
+      <option value="Chuck Anderson">Chuck Anderson</option>
+      <option value="Crystal Nuijens">Crystal Nuijens</option>
+      <option value="Don Williams">Don Williams</option>
+      <option value="Holly Rose">Holly Rose</option>
+      <option value="Jodi Pittman">Jodi Pittman</option>
+      <option value="Kale Brastad">Kale Brastad</option>
+      <option value="Kevin Kleinschmidt">Kevin Kleinschmidt</option>
+      <option value="Lori Olson">Lori Olson</option>
+      <option value="Mary Beeson Williams">Mary Beeson Williams</option>
+      <option value="Myshell Mayor">Myshell Mayor</option>
+      <option value="Roger Britton">Roger Britton</option>
+      <option value="Scott Gutierrez">Scott Gutierrez</option>
+      <option value="Shawn Pittman">Shawn Pittman</option>
+      <option value="Tadina Ikola">Tadina Ikola</option>
+      <option value="Tim Bosch">Tim Bosch</option>
+    </select>
+
+    <label for="gameDate">Date:</label>
+    <input type="date" id="gameDate" required />
+
+    <label for="location">Location (select or type):</label>
+    <select id="location">
+      <option value="">-- Select Preloaded Location --</option>
+      <option value="Yesterday's Gone">Yesterday's Gone</option>
+      <option value="Pillager Lions">Pillager Lions</option>
+      <option value="Dunmire's">Dunmire's</option>
+    </select>
+    <input type="text" id="customLocation" placeholder="Or enter a new location" />
+
+    <button type="submit">Submit Check-In</button>
+  </form>
+  <div id="status"></div>
+
+  <h2>Dealer Rebuy Status</h2>
+  <table id="dealerSummary">
+    <thead>
+      <tr>
+        <th>Dealer</th>
+        <th>Rebuys</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="summaryBody"></tbody>
+  </table>
+
+  <h2>Full Check-In Log</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Dealer</th>
+        <th>Date</th>
+        <th>Location</th>
+      </tr>
+    </thead>
+    <tbody id="logBody"></tbody>
+  </table>
+</body>
+</html>
